@@ -1,0 +1,430 @@
+// Orquestra de Potenciais - Database Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// CORE MODELS
+// ============================================
+
+enum UserRole {
+  MAESTRO        // Líder/Gestor
+  COLABORADOR    // Colaborador
+  ADMIN          // Administrador do sistema
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  PENDING_ONBOARDING
+}
+
+model User {
+  id                String              @id @default(uuid())
+  email             String              @unique
+  password          String
+  name              String
+  role              UserRole            @default(COLABORADOR)
+  status            UserStatus          @default(PENDING_ONBOARDING)
+  avatarUrl         String?
+  phone             String?
+  department        String?
+  position          String?
+
+  // Timestamps
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  lastLoginAt       DateTime?
+
+  // Relationships - Maestro
+  teamsAsLeader     Team[]              @relation("TeamLeader")
+
+  // Relationships - Colaborador
+  teamMemberships   TeamMember[]
+  energyAssessments EnergyAssessment[]
+  needsAssessments  NeedsAssessment[]
+  appreciationLang  AppreciationLanguageProfile?
+  feedbacksGiven    Feedback360[]       @relation("FeedbackGiver")
+  feedbacksReceived Feedback360[]       @relation("FeedbackReceiver")
+  developmentTracks DevelopmentTrack[]
+  recognitionsGiven Recognition[]       @relation("RecognitionGiver")
+  recognitionsReceived Recognition[]    @relation("RecognitionReceiver")
+  performanceRadars PerformanceRadar[]
+  wellbeingRadars   WellbeingRadar[]
+
+  @@map("users")
+}
+
+model Team {
+  id              String         @id @default(uuid())
+  name            String
+  description     String?
+  color           String         @default("#6366f1") // Indigo
+  icon            String?
+
+  // Leader (Maestro)
+  leaderId        String
+  leader          User           @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: Cascade)
+
+  // Timestamps
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  // Relationships
+  members         TeamMember[]
+  rituals         Ritual[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id              String         @id @default(uuid())
+
+  teamId          String
+  team            Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  joinedAt        DateTime       @default(now())
+  onboardingCompletedAt DateTime?
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+// ============================================
+// ENERGY RADAR (4 TIPOS DE ENERGIA)
+// ============================================
+
+enum EnergyType {
+  PRODUTIVA      // Energia Produtiva
+  CONFORTAVEL    // Energia Confortável
+  RENOVACAO      // Energia de Renovação
+  CONEXAO        // Energia de Conexão
+}
+
+model EnergyAssessment {
+  id              String         @id @default(uuid())
+
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 4 Tipos de Energia (escala 0-10)
+  produtiva       Int            @default(5)  // Foco, realização, flow
+  confortavel     Int            @default(5)  // Segurança, estabilidade
+  renovacao       Int            @default(5)  // Descanso, recuperação
+  conexao         Int            @default(5)  // Pertencimento, vínculos
+
+  // Metadata
+  notes           String?
+  assessmentDate  DateTime       @default(now())
+  createdAt       DateTime       @default(now())
+
+  @@map("energy_assessments")
+}
+
+// ============================================
+// BARÔMETRO DE NECESSIDADES (MASLOW)
+// ============================================
+
+enum NeedCategory {
+  SEGURANCA          // Base - Segurança no trabalho
+  SOCIAL             // Pertencimento e conexão
+  ESTIMA             // Reconhecimento e valorização
+  AUTORREALIZACAO    // Crescimento e propósito
+}
+
+model NeedsAssessment {
+  id                  String         @id @default(uuid())
+
+  userId              String
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Níveis de Maslow adaptados (escala 0-10)
+  seguranca           Int            @default(5)  // Estabilidade, clareza de papel
+  social              Int            @default(5)  // Relacionamentos, pertencimento
+  estima              Int            @default(5)  // Reconhecimento, respeito
+  autorrealizacao     Int            @default(5)  // Crescimento, propósito, autonomia
+
+  // Metadata
+  notes               String?
+  assessmentDate      DateTime       @default(now())
+  createdAt           DateTime       @default(now())
+
+  @@map("needs_assessments")
+}
+
+// ============================================
+// LINGUAGENS DE VALORIZAÇÃO
+// ============================================
+
+enum AppreciationLanguage {
+  PALAVRAS_AFIRMACAO     // Palavras de Afirmação
+  TEMPO_QUALIDADE        // Tempo de Qualidade
+  PRESENTES              // Presentes e Símbolos
+  ATOS_SERVICO           // Atos de Serviço
+  TOQUE_FISICO           // Contato Físico (adaptado para ambiente profissional)
+}
+
+model AppreciationLanguageProfile {
+  id                    String                  @id @default(uuid())
+
+  userId                String                  @unique
+  user                  User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Linguagem primária
+  primary               AppreciationLanguage
+
+  // Linguagem secundária
+  secondary             AppreciationLanguage?
+
+  // Scores (baseado no questionário de 15 perguntas)
+  palavrasAfirmacao     Int                     @default(0)
+  tempoQualidade        Int                     @default(0)
+  presentes             Int                     @default(0)
+  atosServico           Int                     @default(0)
+  toqueFisico           Int                     @default(0)
+
+  // Metadata
+  completedAt           DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+
+  @@map("appreciation_language_profiles")
+}
+
+// ============================================
+// BIBLIOTECA DE RITUAIS
+// ============================================
+
+enum RitualCategory {
+  ENERGIZACAO        // Rituais de energização
+  CONEXAO            // Rituais de conexão
+  RECONHECIMENTO     // Rituais de reconhecimento
+  DESENVOLVIMENTO    // Rituais de desenvolvimento
+  RENOVACAO          // Rituais de renovação
+}
+
+enum RitualFrequency {
+  DIARIA
+  SEMANAL
+  QUINZENAL
+  MENSAL
+  TRIMESTRAL
+}
+
+model Ritual {
+  id              String            @id @default(uuid())
+
+  title           String
+  description     String
+  category        RitualCategory
+  frequency       RitualFrequency
+  duration        Int               // Em minutos
+  participants    Int               @default(1) // Número sugerido de participantes
+
+  // Objetivos e benefícios
+  objectives      String[]
+  benefits        String[]
+
+  // Instruções passo a passo
+  steps           String[]
+
+  // Materiais necessários
+  materials       String[]
+
+  // Sugestões de personalização
+  tips            String[]
+
+  // Relação com equipe (opcional - rituais podem ser globais ou específicos de equipe)
+  teamId          String?
+  team            Team?             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  // Metadata
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@map("rituals")
+}
+
+// ============================================
+// FEEDBACK 360° DINÂMICO
+// ============================================
+
+enum FeedbackType {
+  POSITIVO
+  CONSTRUTIVO
+  NEUTRO
+}
+
+enum FeedbackDimension {
+  COMUNICACAO
+  LIDERANCA
+  TRABALHO_EQUIPE
+  INOVACAO
+  RESULTADO
+  RELACIONAMENTO
+}
+
+model Feedback360 {
+  id              String            @id @default(uuid())
+
+  // Quem deu o feedback
+  giverId         String
+  giver           User              @relation("FeedbackGiver", fields: [giverId], references: [id], onDelete: Cascade)
+
+  // Quem recebeu
+  receiverId      String
+  receiver        User              @relation("FeedbackReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  type            FeedbackType
+  dimension       FeedbackDimension
+
+  content         String
+
+  // Anônimo ou identificado
+  isAnonymous     Boolean           @default(false)
+
+  // Metadata
+  createdAt       DateTime          @default(now())
+
+  @@map("feedback_360")
+}
+
+// ============================================
+// TRILHAS DE DESENVOLVIMENTO
+// ============================================
+
+enum TrackStatus {
+  NAO_INICIADA
+  EM_ANDAMENTO
+  CONCLUIDA
+  PAUSADA
+}
+
+enum TrackType {
+  TECNICA           // Habilidade técnica
+  COMPORTAMENTAL    // Soft skill
+  LIDERANCA         // Liderança
+  ESTRATEGICA       // Visão estratégica
+}
+
+model DevelopmentTrack {
+  id              String         @id @default(uuid())
+
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title           String
+  description     String
+  type            TrackType
+  status          TrackStatus    @default(NAO_INICIADA)
+
+  // Progresso
+  progress        Int            @default(0) // 0-100%
+
+  // Milestones
+  milestones      Json[]         // Array de { title, completed, date }
+
+  // Recursos
+  resources       String[]       // Links, livros, cursos
+
+  // Datas
+  startDate       DateTime?
+  targetDate      DateTime?
+  completedDate   DateTime?
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@map("development_tracks")
+}
+
+// ============================================
+// SISTEMA DE RECONHECIMENTO
+// ============================================
+
+enum RecognitionType {
+  AGRADECIMENTO
+  PARABENS
+  DESTAQUE
+  PREMIO
+}
+
+model Recognition {
+  id              String            @id @default(uuid())
+
+  // Quem reconheceu
+  giverId         String
+  giver           User              @relation("RecognitionGiver", fields: [giverId], references: [id], onDelete: Cascade)
+
+  // Quem foi reconhecido
+  receiverId      String
+  receiver        User              @relation("RecognitionReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  type            RecognitionType
+  title           String
+  message         String
+
+  // Público ou privado
+  isPublic        Boolean           @default(true)
+
+  createdAt       DateTime          @default(now())
+
+  @@map("recognitions")
+}
+
+// ============================================
+// RADAR DE DESEMPENHO E POTENCIAL
+// ============================================
+
+model PerformanceRadar {
+  id              String         @id @default(uuid())
+
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Dimensões de Performance (escala 0-10)
+  resultados      Int            @default(5)  // Entrega de resultados
+  qualidade       Int            @default(5)  // Qualidade do trabalho
+  inovacao        Int            @default(5)  // Capacidade de inovar
+  colaboracao     Int            @default(5)  // Trabalho em equipe
+  autonomia       Int            @default(5)  // Autonomia e iniciativa
+  adaptabilidade  Int            @default(5)  // Adaptação a mudanças
+
+  assessmentDate  DateTime       @default(now())
+  createdAt       DateTime       @default(now())
+
+  @@map("performance_radars")
+}
+
+// ============================================
+// RADAR DE BEM-ESTAR COGNITIVO E EMOCIONAL
+// ============================================
+
+model WellbeingRadar {
+  id              String         @id @default(uuid())
+
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Dimensões de Bem-Estar (escala 0-10)
+  focusConcentracao    Int       @default(5)  // Foco e concentração
+  energiaFisica        Int       @default(5)  // Energia física
+  equilibrioEmocional  Int       @default(5)  // Equilíbrio emocional
+  motivacao            Int       @default(5)  // Motivação
+  qualidadeSono        Int       @default(5)  // Qualidade do sono
+  relacionamentos      Int       @default(5)  // Qualidade dos relacionamentos
+
+  assessmentDate  DateTime       @default(now())
+  createdAt       DateTime       @default(now())
+
+  @@map("wellbeing_radars")
+}
